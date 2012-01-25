@@ -1,5 +1,6 @@
 (defproject forma-deploy "0.1.0-SNAPSHOT"
   :description "Hadoop deploy for FORMA."
+  :main forma.hadoop.cluster
   :dependencies [[clojure "1.2.1"]
                  [org.clojure/tools.cli "0.1.0"]
                  [backtype/dfs-datastores-cascading "1.0.5"]]
