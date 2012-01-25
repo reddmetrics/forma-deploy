@@ -59,5 +59,5 @@ cli-interface."}
   (fn [& args]
     (let [arg-map (-> args parser validator)]
       (if-let [e-seq (:_errors arg-map)]
-        (v/print-errors e-seq)
+        (print-errors e-seq)
         (func arg-map)))))

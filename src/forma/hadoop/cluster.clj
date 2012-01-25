@@ -13,8 +13,7 @@
             [pallet.resource.remote-directory :as rd]
             [pallet.resource.directory :as d]
             [pallet.resource.package :as package])
-  (:import [backtype.hadoop ThriftSerialization]
-           [cascading.tuple.hadoop BytesSerialization TupleSerialization]
+  (:import [cascading.tuple.hadoop BytesSerialization TupleSerialization]
            [org.apache.hadoop.io.serializer WritableSerialization JavaSerialization]))
 
 ;; ### Job Run
@@ -37,22 +36,14 @@
 (def fw-path "/usr/local/fwtools")
 (def native-path "/home/hadoop/native")
 
-(def serializations
-  (join "," (for [cls [ThriftSerialization BytesSerialization
-                       TupleSerialization WritableSerialization
-                       JavaSerialization]]
-              (.getName cls))))
-
 (def tokens
-  (join "," [
-             "130=forma.schema.IntArray"
+  (join "," ["130=forma.schema.IntArray"
              "131=forma.schema.DoubleArray"
              "132=forma.schema.FireTuple"
              "133=forma.schema.FireSeries"
              "134=forma.schema.FormaValue"
              "135=forma.schema.FormaNeighborValue"
-             "136=forma.schema.FormaSeries"
-             ]))
+             "136=forma.schema.FormaSeries"]))
 
 (def-phase-fn config-redd
   "This phase installs the two files that we need to make redd run
@@ -119,8 +110,7 @@
                               :dfs.namenode.handler.count 20
                               :dfs.block.size 134217728
                               :dfs.support.append true}
-                  :core-site {:io.serializations serializations
-                              :cascading.serialization.tokens tokens
+                  :core-site {:cascading.serialization.tokens tokens
                               :fs.s3n.awsAccessKeyId "AKIAJ56QWQ45GBJELGQA"
                               :fs.s3n.awsSecretAccessKey
                               "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"}
@@ -238,7 +228,7 @@
 
                         --bootstrap-action
                         s3://elasticmapreduce/bootstrap-actions/configurations/latest/memory-intensive
-
+                        
                         --bootstrap-action
                         s3://elasticmapreduce/bootstrap-actions/add-swap
                         --args 2048
@@ -250,23 +240,15 @@
                         --bootstrap-action
                         s3://reddconfig/bootstrap-actions/forma_bootstrap.sh))))
 
-(defn cli-interface
-  [parser validator func]
-  (fn [& args]
-    (let [arg-map (-> args parser validator)]
-      (if-let [e-seq (:_errors arg-map)]
-        (v/print-errors e-seq)
-        (func arg-map)))))
-
 (defn parse-hadoop-args [args]
   (cli args
        (optional ["-n" "--name" "Name of cluster." :default "dev"])
        (optional ["-t" "--type" "Type  cluster." :default "high-memory"])
-       (optional ["-s" "--size" "Size of cluster."] #(Long. ))
+       (optional ["-s" "--size" "Size of cluster."] #(Long. %))
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
-       (optional ["--start" "Provisions supplied hosts."])
-       (optional ["--stop" "Destroys cluster (kill services, delete layouts)."])
-       (optional ["--emr" "Attach to storm cluster."])))
+       (optional ["--start" "Boots a Pallet cluster."])
+       (optional ["--emr" "Boots an EMR cluster."])
+       (optional ["--stop" "Kills a pallet cluster."])))
 
 (defn size-present?
   "This step checks that, if `start` or `emr` exist in the arg map,
@@ -288,6 +270,7 @@
                  (fn [{:keys [name type size] :as m}]
                    (condp (flip get) m
                      :start (create-cluster! type size)
+                     :emr   (boot-emr! type size name)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!")))))
