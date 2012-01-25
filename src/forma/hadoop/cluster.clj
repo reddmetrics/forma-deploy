@@ -215,9 +215,7 @@
         {type :hardware-id} base-machine-spec]
     (execute/local-script
      (elastic-mapreduce --create --alive
-                        --name ~(str  name)
-                        -a "AKIAJ56QWQ45GBJELGQA"
-                        -p "6L7JV5+qJ9yXz1E30e3qmm4Yf7E1Xs4pVhuEL8LV"
+                        --name ~(str "forma-" name)
                         --instance-group master
                         --instance-type ~type
                         --instance-count 1
