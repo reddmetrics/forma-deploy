@@ -31,7 +31,7 @@ except ImportError:
     import utils
     import static
 
-
+import hipchat
 #firespath = "fires/global/after_day60_2010/" # booooo globals!
 
 def checkFiresFilesOnS3(server, fireslist, bucket, staging_bucket, skip_last_N=2):
@@ -114,6 +114,7 @@ def main(staging=False, bucket="modisfiles", staging_bucket="formastaging", emai
 
     for address in email.split(" "):
         utils.sendStatusEmail(to_email=address, subject="[forma-data-update] %s: %s new files acquired" % ("Fires", len(acquired)), body=body)
+    hipchat.send_message(body)
     return
 
 if __name__ == "__main__":

@@ -40,6 +40,8 @@ except ImportError:
     import utils
     import static
 
+import hipchat
+
 #server = d.modis_ftp
 #server = "e4ftl01u.ecs.nasa.gov"
 #server = "e4ftl01.cr.usgs.gov" # as of September 13, 2011
@@ -243,7 +245,7 @@ def sendUpdateStatusEmail(email, product_prefix, to_get, dates, checked, acquire
 
     for address in email.split(" "):
         utils.sendStatusEmail(to_email=address, subject="[forma-data-update] %s: %s new files acquired" % (product_prefix, len(acquired)), body=body)
-    return
+    return body
 
 def parseCL():
     from optparse import OptionParser
@@ -294,8 +296,9 @@ def main(bucket="modisfiles", staging_bucket="formastaging", server=static.modis
     acquired = getModisFiles(to_get, ftp)
 
     # cleanup
-    sendUpdateStatusEmail(email, product_prefix, to_get, dates, checked, acquired)
-
+    status = sendUpdateStatusEmail(email, product_prefix, to_get, dates, checked, acquired)
+    hipchat.send_message(status)    
+    
     return
 
 if __name__ == "__main__":
