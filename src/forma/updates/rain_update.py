@@ -10,7 +10,7 @@ import os
 from file_obj import FileObj
 
 home = "/home/ubuntu/"
-hipchat_message = 'echo "I haz updated: \n%s" | ./hipchat_room_message -t %s -r 42482 -f "UpdaterBot"'
+hipchat_message = 'echo "I haz updated: \n%s" | ~/hipchat-cli/hipchat_room_message -t %s -r 42482 -f "UpdaterBot"'
 
 def main(staging_bucket="formastaging"):    
     
@@ -43,15 +43,15 @@ def main(staging_bucket="formastaging"):
         remote = os.path.join("s3://%s/PRECL/" % staging_bucket, os.path.split(local)[1])
         f.put(remote, local)
         os.remove(local)
-        status = "Downloaded rain to %s. Now includes data for month %i" % (local, month - 1)
+        status = "Updated rain file %s. Now includes data for month %i" % (remote, month - 1)
 
     else:
         status = "No new rain data: %s updated in month %s" % (most_recent, month_str)
     print status
     
-    if os.getenv["hipchat"]:
+    if os.getenv("hipchat"):
         try:
-            subprocess.check_call(hipchat_message % (status, os.getenv["hipchat"]))
+            subprocess.check_call(hipchat_message % (status, os.getenv("hipchat")), shell=True)
         except:
             pass
         
