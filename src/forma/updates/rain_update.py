@@ -10,6 +10,7 @@ import os
 from file_obj import FileObj
 
 home = "/home/ubuntu/"
+hipchat_message = 'echo "I haz updated: \n%s" | ./hipchat_room_message -t %s -r 42482 -f "UpdaterBot"'
 
 def main(staging_bucket="formastaging"):    
     
@@ -47,6 +48,12 @@ def main(staging_bucket="formastaging"):
     else:
         status = "No new rain data: %s updated in month %s" % (most_recent, month_str)
     print status
+    
+    if os.getenv["hipchat"]:
+        try:
+            subprocess.check_call(hipchat_message % (status, os.getenv["hipchat"]))
+        except:
+            pass
         
 if __name__ == "__main__":
     main()
