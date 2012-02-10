@@ -31,17 +31,17 @@ except ImportError:
     import utils
     import static
 
-
+import hipchat
 #firespath = "fires/global/after_day60_2010/" # booooo globals!
 
-def checkFiresFilesOnS3(server, fireslist, bucket, staging_bucket):
+def checkFiresFilesOnS3(server, fireslist, bucket, staging_bucket, skip_last_N=2):
 
-    # skip the last 2 files in fireslist - last one is from today,
-    # probably incomplete, and second to last one is from yesterday and may
-    # not yet be finalized
+    # skip the last N files in fireslist - last one is from "today",
+    # and probably incomplete. Some files are reprocessed a day later, so we want 
+    # to wait an extra day before grabbing the files.
 
     to_get = []
-    for fname in fireslist[:-2]:
+    for fname in fireslist[:-skip_last_N]:
         print "\nProcessing", fname
 
         # setup for checking if we've already got a particular file
@@ -114,6 +114,7 @@ def main(staging=False, bucket="modisfiles", staging_bucket="formastaging", emai
 
     for address in email.split(" "):
         utils.sendStatusEmail(to_email=address, subject="[forma-data-update] %s: %s new files acquired" % ("Fires", len(acquired)), body=body)
+    hipchat.send_message(body)
     return
 
 if __name__ == "__main__":
