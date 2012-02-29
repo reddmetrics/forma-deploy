@@ -1,5 +1,8 @@
 #! /bin/sh
 
+# expected usage:
+# sh deploy.sh /path/to/ssh/key dns_address
+
 # the usual ...
 echo "lein clean"
 lein clean
