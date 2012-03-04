@@ -1,7 +1,9 @@
 #! /bin/sh
 
 # expected usage:
-# sh deploy.sh /path/to/ssh/key dns_address
+# sh deploy.sh /path/to/repo /path/to/ssh/key dns_address
+
+cd $1
 
 # the usual ...
 echo "lein clean"
@@ -15,15 +17,10 @@ lein uberjar
 
 # move jar file to job tracker
 echo "Copying uberjar to $2"
-scp -i $1 forma-0.2.0-SNAPSHOT-standalone.jar hadoop@$2:
+scp -i $2 $1/forma-0.2.0-SNAPSHOT-standalone.jar hadoop@$3:
 
 echo "Logging into $2"
-ssh -i $1 hadoop@$2
-
 # launch a new screen with logging enabled
-screen -Lm
-
-# launch a repl
-hadoop jar forma-0.2.0-SNAPSHOT-standalone.jar clojure.main
+ssh -i $2 hadoop@$3
 
 
