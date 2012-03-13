@@ -130,7 +130,7 @@
                                 :mapred.output.direct.NativeS3FileSystem true
                                 :mapred.child.java.opts (str "-Djava.library.path="
                                                              native-path
-                                                             " -Xms1024m -Xmx1024m")
+                                                             " -Xms1024m -Xmx2048m")
                                 :mapred.child.env (str "LD_LIBRARY_PATH="
                                                        lib-path)}})))
 
@@ -219,6 +219,7 @@
                         --instance-group master
                         --instance-type ~type
                         --instance-count 1
+                        --availability-zone us-east-1e
                         
                         --instance-group core
                         --instance-type ~type
