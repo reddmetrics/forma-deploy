@@ -238,7 +238,7 @@
                         --args ~(parse-emr-config base-props)
 
                         --bootstrap-action
-                        s3://reddconfig/bootstrap-actions/forma_bootstrap_robin.sh))))
+                        s3://reddconfig/bootstrap-actions/forma_bootstrap.sh))))
 
 (defn parse-hadoop-args [args]
   (cli args
