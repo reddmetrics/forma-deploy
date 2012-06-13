@@ -11,6 +11,9 @@ jblas=libjblas.tar.gz
 sources=/etc/apt/sources.list
 hadoop_lib=/home/hadoop/native/Linux-amd64-64
 
+# Update apt repos
+sudo apt-get update
+
 # Start with screen.
 sudo apt-get -y --force-yes install screen
 sudo apt-get -y --force-yes install exim4
