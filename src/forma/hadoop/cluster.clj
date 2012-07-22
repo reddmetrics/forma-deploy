@@ -75,35 +75,33 @@
      ((echo ~pam-lims) ">>" "/etc/pam.d/common-session"))))
 
 (defn mk-profile
-  [mappers reducers spot-price ami hardware-id]
+  [mappers reducers bid-price ami hardware-id]
   {:map-tasks mappers
    :reduce-tasks reducers
    :image-id ami
    :hardware-id hardware-id
-   :price spot-price})
+   :price bid-price})
 
-(def cluster-profiles
-  {"large"           (mk-profile 4 2 1.20 "us-east-1/ami-08f40561" "m1.large")
-   "high-memory"     (mk-profile 30 24 1.50 "us-east-1/ami-08f40561" "m2.4xlarge")
-   "cluster-compute" (mk-profile 22 16 1.20 "us-east-1/ami-1cad5275" "cc1.4xlarge")})
+(defn cluster-profiles
+  [type bid-price]
+  ({"large"           (mk-profile 4 2 bid-price "us-east-1/ami-08f40561" "m1.large")
+   "high-memory"     (mk-profile 30 24 bid-price "us-east-1/ami-08f40561" "m2.4xlarge")
+   "cluster-compute" (mk-profile 22 16 bid-price "us-east-1/ami-1cad5275" "cc1.4xlarge")}
+   type))
 
 (defn forma-cluster
   "Generates a FORMA cluster with the supplied number of nodes. We
   pick that reduce capacity based on the recommended 1.2 times the
   number of tasks times number of nodes."
-  [cluster-key nodecount]
+  [cluster-key nodecount & [bid-price]] 
   {:pre [(not (nil? cluster-key))]}
   (let [lib-path (str fw-path "/usr/lib")
-        {:keys [map-tasks reduce-tasks image-id hardware-id price]}
-        ;;cluster-profiles here hard codes spot price at 1.20 for
-        ;;large and cluster-compute, and 1.50 for high-memory
-        (cluster-profiles (or cluster-key "high-memory"))]
+        {:keys [map-tasks reduce-tasks image-id hardware-id]}
+        (cluster-profiles (or cluster-key "high-memory") bid-price)]
     (cluster-spec
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
-      ;;jobtracker uses the on-demand pricing. only slave group uses
-      ;;the spot-price, which is set in cluster-profiles
-      :slaves     (slave-group nodecount :spec {:spot-price (float price)})}
+       :slaves     (slave-group nodecount :spec {:spot-price (float bid-price)})}
      :base-machine-spec {:hardware-id hardware-id
                          :image-id image-id}
      :base-props {:hadoop-env {:JAVA_LIBRARY_PATH native-path
@@ -166,9 +164,9 @@
   (println "Hit Ctrl-C to exit."))
 
 (defn create-cluster!
-  [node-type node-count]
+  [node-type node-count bid-price]
   (env/with-ec2-service [service]
-    (let [cluster (forma-cluster node-type node-count)]
+    (let [cluster (forma-cluster node-type node-count bid-price)]
       (println
        (format "Creating cluster of %s instances and %d nodes."
                node-type node-count))
@@ -213,13 +211,10 @@
          (format "\"--core-config-file,%s,%s\"" redd-config-path))))
 
 (defn boot-emr!
-  "TODO: Fix the way we get spot-price here."
-  [node-type node-count name spot]
+  [node-type node-count name bid]
   (let [{:keys [base-props base-machine-spec nodedefs]}
-        ;;NEED TO GET SPOT into forma-cluster below
-        (forma-cluster node-type node-count)
-        {type :hardware-id} base-machine-spec
-        spot-price (:spot-price (:spec (:node (:slaves nodedefs))))]
+        (forma-cluster node-type node-count bid)
+        {type :hardware-id} base-machine-spec]
     (execute/local-script
      (elastic-mapreduce --create --alive
                         --name ~(str "forma-" name)
@@ -230,7 +225,7 @@
                         --instance-group core
                         --instance-type ~type
                         --instance-count ~node-count
-                        --bid-price ~spot
+                        --bid-price ~bid
                         --enable-debugging
 
                         --bootstrap-action
@@ -250,9 +245,9 @@
 (defn parse-hadoop-args
   "Used to parse command line arguments, returns a map of options. The
   optional spec function contains string aliases, documentation, and a
-  default value. If a valid size or spot price are supplied, they are
+  default value. If a valid size or bid price are supplied, they are
   converted into a number. If the size is invalid or not supplied, it
-  is nil. If the spot price is unsupplied, it is nil. If the spot
+  is nil. If the bid price is unsupplied, it is nil. If the bid
   price is supplied but incorrectly formatted, it is -1. Ex output:
   {:stop nil, :emr true, :start nil, :jobtracker-ip nil, :size
   25, :type large, :name dev}" [args]
@@ -263,7 +258,7 @@
                                                        (Long. %)
                                                        (catch Exception _
                                                          nil)))
-       (optional ["--spot" "Specifies a spot price"]  #(try
+       (optional ["--bid" "Specifies a bid price"]  #(try
                                                          (Float. %)
                                                          (catch Exception _
                                                            (if (nil? %)
@@ -285,13 +280,13 @@
         (add-error m "EMR requires a valid cluster size.")
         :else m))
 
-(defn spotprice-valid?
-  "This step checks that, if `start` or `emr` AND 'spot' exist in the
-  arg map, they're accompanied by a valid spot-price. If this passes,
+(defn bidprice-valid?
+  "This step checks that, if `start` or `emr` AND 'bid' exist in the
+  arg map, they're accompanied by a valid bid-price. If this passes,
   the function acts as identity, else an error is added to the map."
-  [{:keys [start emr spot] :as m}]
-  (if (and (or start emr) (= -1 spot))
-    (add-error m "Please specify a valid spot price.")
+  [{:keys [start emr bid] :as m}]
+  (if (and (or start emr) (= -1 bid))
+    (add-error m "Please specify a valid bid price.")
     m))
 
 ;;Checks to make sure command line arguments make sense. If there are
@@ -300,7 +295,7 @@
   (build-validator
    (just-one? :start :stop :emr :jobtracker-ip)
    (size-valid?)
-   (spotprice-valid?)))
+   (bidprice-valid?)))
 
 (defn -main
   [& args]
@@ -315,10 +310,10 @@
  (def -main
   (cli-interface parse-hadoop-args
                  hadoop-validator
-                 (fn [{:keys [name type size spot] :as m}]
+                 (fn [{:keys [name type size bid] :as m}]
                    (condp (flip get) m
-                     :start (create-cluster! type size)
-                     :emr   (boot-emr! type size name spot)
+                     :start (create-cluster! type size bid)
+                     :emr   (boot-emr! type size name bid)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!"))))))
