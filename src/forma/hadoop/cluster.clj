@@ -95,10 +95,14 @@
   {:pre [(not (nil? cluster-key))]}
   (let [lib-path (str fw-path "/usr/lib")
         {:keys [map-tasks reduce-tasks image-id hardware-id price]}
+        ;;cluster-profiles here hard codes spot price at 1.20 for
+        ;;large and cluster-compute, and 1.50 for high-memory
         (cluster-profiles (or cluster-key "high-memory"))]
     (cluster-spec
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
+      ;;jobtracker uses the on-demand pricing. only slave group uses
+      ;;the spot-price, which is set in cluster-profiles
       :slaves     (slave-group nodecount :spec {:spot-price (float price)})}
      :base-machine-spec {:hardware-id hardware-id
                          :image-id image-id}
@@ -210,9 +214,12 @@
 
 (defn boot-emr!
   "TODO: Fix the way we get spot-price here."
-  [node-type node-count name]
-  (let [{:keys [base-props base-machine-spec]} (forma-cluster node-type node-count)
-        {type :hardware-id} base-machine-spec]
+  [node-type node-count name spot]
+  (let [{:keys [base-props base-machine-spec nodedefs]}
+        ;;NEED TO GET SPOT into forma-cluster below
+        (forma-cluster node-type node-count)
+        {type :hardware-id} base-machine-spec
+        spot-price (:spot-price (:spec (:node (:slaves nodedefs))))]
     (execute/local-script
      (elastic-mapreduce --create --alive
                         --name ~(str "forma-" name)
@@ -223,7 +230,7 @@
                         --instance-group core
                         --instance-type ~type
                         --instance-count ~node-count
-                        --bid-price  1.20 ;;~(:spot-price base-machine-spec)
+                        --bid-price ~spot
                         --enable-debugging
 
                         --bootstrap-action
@@ -238,39 +245,80 @@
                         --args ~(parse-emr-config base-props)
 
                         --bootstrap-action
-                        s3://reddconfig/bootstrap-actions/forma_bootstrap.sh))))
+                        s3://reddconfig/bootstrap-actions/forma_bootstrap_robin.sh))))
 
-(defn parse-hadoop-args [args]
+(defn parse-hadoop-args
+  "Used to parse command line arguments, returns a map of options. The
+  optional spec function contains string aliases, documentation, and a
+  default value. If a valid size or spot price are supplied, they are
+  converted into a number. If the size is invalid or not supplied, it
+  is nil. If the spot price is unsupplied, it is nil. If the spot
+  price is supplied but incorrectly formatted, it is -1. Ex output:
+  {:stop nil, :emr true, :start nil, :jobtracker-ip nil, :size
+  25, :type large, :name dev}" [args]
   (cli args
        (optional ["-n" "--name" "Name of cluster." :default "dev"])
        (optional ["-t" "--type" "Type  cluster." :default "high-memory"])
-       (optional ["-s" "--size" "Size of cluster."] #(Long. %))
+       (optional ["-s" "--size" "Size of cluster."] #(try
+                                                       (Long. %)
+                                                       (catch Exception _
+                                                         nil)))
+       (optional ["--spot" "Specifies a spot price"]  #(try
+                                                         (Float. %)
+                                                         (catch Exception _
+                                                           (if (nil? %)
+                                                             nil
+                                                             -1))))
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
        (optional ["--start" "Boots a Pallet cluster."])
        (optional ["--emr" "Boots an EMR cluster."])
        (optional ["--stop" "Kills a pallet cluster."])))
 
-(defn size-present?
+(defn size-valid?
   "This step checks that, if `start` or `emr` exist in the arg map,
-  they're accompanied by a size. If this passes, the function acts as
+  they're accompanied by a valid size. If this passes, the function acts as
   identity, else an error is added to the map."
   [{:keys [start emr size] :as m}]
-  (cond (and start (not size)) (add-error m "Start requires a name.")
-        (and emr   (not size)) (add-error m "EMR requires a name.")
+  (cond (and start (nil? size))
+        (add-error m "Start requires a valid cluster size.")
+        (and emr   (nil? size))
+        (add-error m "EMR requires a valid cluster size.")
         :else m))
 
+(defn spotprice-valid?
+  "This step checks that, if `start` or `emr` AND 'spot' exist in the
+  arg map, they're accompanied by a valid spot-price. If this passes,
+  the function acts as identity, else an error is added to the map."
+  [{:keys [start emr spot] :as m}]
+  (if (and (or start emr) (= -1 spot))
+    (add-error m "Please specify a valid spot price.")
+    m))
+
+;;Checks to make sure command line arguments make sense. If there are
+;;errors then they are added to the map
 (def hadoop-validator
   (build-validator
    (just-one? :start :stop :emr :jobtracker-ip)
-   (size-present?)))
+   (size-valid?)
+   (spotprice-valid?)))
 
-(def -main
+(defn -main
+  [& args]
+  (println args)
+  (println "parsed args: "
+           (parse-hadoop-args args))
+  (println "validated args: "
+           (hadoop-validator
+            (parse-hadoop-args args))))
+
+(comment
+ (def -main
   (cli-interface parse-hadoop-args
                  hadoop-validator
-                 (fn [{:keys [name type size] :as m}]
+                 (fn [{:keys [name type size spot] :as m}]
                    (condp (flip get) m
                      :start (create-cluster! type size)
-                     :emr   (boot-emr! type size name)
+                     :emr   (boot-emr! type size name spot)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
-                     (println "Please provide an option!")))))
+                     (println "Please provide an option!"))))))
