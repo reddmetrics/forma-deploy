@@ -101,7 +101,9 @@
     (cluster-spec
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
-       :slaves     (slave-group nodecount :spec {:spot-price (float bid-price)})}
+      :slaves     (if (nil? bid-price)
+                    (slave-group nodecount) ;;on-demand?
+                    (slave-group nodecount :spec {:spot-price bid-price}))}
      :base-machine-spec {:hardware-id hardware-id
                          :image-id image-id}
      :base-props {:hadoop-env {:JAVA_LIBRARY_PATH native-path
@@ -258,7 +260,7 @@
                                                        (Long. %)
                                                        (catch Exception _
                                                          nil)))
-       (optional ["--bid" "Specifies a bid price"]  #(try
+       (optional ["--bid" "Specifies a bid price."]  #(try
                                                          (Float. %)
                                                          (catch Exception _
                                                            (if (nil? %)
@@ -297,17 +299,7 @@
    (size-valid?)
    (bidprice-valid?)))
 
-(defn -main
-  [& args]
-  (println args)
-  (println "parsed args: "
-           (parse-hadoop-args args))
-  (println "validated args: "
-           (hadoop-validator
-            (parse-hadoop-args args))))
-
-(comment
- (def -main
+(def -main
   (cli-interface parse-hadoop-args
                  hadoop-validator
                  (fn [{:keys [name type size bid] :as m}]
@@ -316,4 +308,4 @@
                      :emr   (boot-emr! type size name bid)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
-                     (println "Please provide an option!"))))))
+                     (println "Please provide an option!")))))
