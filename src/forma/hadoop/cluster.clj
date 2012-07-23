@@ -102,7 +102,7 @@
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
       :slaves     (if (nil? bid-price)
-                    (slave-group nodecount) ;;on-demand?
+                    (slave-group nodecount) ;;on-demand
                     (slave-group nodecount :spec {:spot-price bid-price}))}
      :base-machine-spec {:hardware-id hardware-id
                          :image-id image-id}
@@ -222,12 +222,13 @@
                         --name ~(str "forma-" name)
                         --instance-group master
                         --instance-type ~type
-                        --instance-count 1
+                        --instance-count 1 
                         
                         --instance-group core
                         --instance-type ~type
                         --instance-count ~node-count
-                        --bid-price ~bid
+                        ~(when (not (nil? bid))
+                           (str " --bid-price " bid))
                         --enable-debugging
 
                         --bootstrap-action
