@@ -256,7 +256,7 @@
   25, :type large, :name dev}" [args]
   (cli args
        (optional ["-n" "--name" "Name of cluster." :default "dev"])
-       (optional ["-t" "--type" "Type  cluster." :default "high-memory"])
+       (optional ["-t" "--type" "Type  cluster."])
        (optional ["-s" "--size" "Size of cluster."] #(try
                                                        (Long. %)
                                                        (catch Exception _
@@ -292,12 +292,26 @@
     (add-error m "Please specify a valid bid price.")
     m))
 
+(defn type-valid?
+  "This step checks that, if `start` or `emr` exist in the
+  arg map, they're accompanied by a valid type. If this passes,
+  the function acts as identity, else an error is added to the map."
+  [{:keys [start emr type] :as m}]
+  (if (and (or start emr)
+           (or (nil? type)
+               (not (or (= type "large")
+                        (= type "high-memory")
+                        (= type "cluster-compute")))))
+    (add-error m "Please specify a valid type (large, high-memory, cluster-compute).")
+    m))
+
 ;;Checks to make sure command line arguments make sense. If there are
 ;;errors then they are added to the map
 (def hadoop-validator
   (build-validator
    (just-one? :start :stop :emr :jobtracker-ip)
    (size-valid?)
+   (type-valid?)
    (bidprice-valid?)))
 
 (def -main
