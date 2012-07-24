@@ -55,6 +55,9 @@ cli-interface."}
 ;; ## CLI Builder
 
 (defn cli-interface
+  "Takes a parser to build an arg map from the command line arguments,
+  a validator which adds errors to the arg map if necessary, and a
+  function to execute on the arg map if there were no errors."
   [parser validator func]
   (fn [& args]
     (let [arg-map (-> args parser validator)]
