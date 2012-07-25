@@ -213,13 +213,16 @@
          (format "\"--core-config-file,%s,%s\"" redd-config-path))))
 
 (defn boot-emr!
-  [node-type node-count name bid]
+  [node-type node-count name bid zone]
   (let [{:keys [base-props base-machine-spec nodedefs]}
         (forma-cluster node-type node-count bid)
         {type :hardware-id} base-machine-spec]
     (execute/local-script
      (elastic-mapreduce --create --alive
                         --name ~(str "forma-" name)
+                        --availability-zone ~zone
+                        --ami-version "2.0.5"
+                        
                         --instance-group master
                         --instance-type ~type
                         --instance-count 1 
@@ -256,7 +259,7 @@
   25, :type large, :name dev}" [args]
   (cli args
        (optional ["-n" "--name" "Name of cluster." :default "dev"])
-       (optional ["-t" "--type" "Type  cluster." :default "high-memory"])
+       (optional ["-t" "--type" "Type  cluster."])
        (optional ["-s" "--size" "Size of cluster."] #(try
                                                        (Long. %)
                                                        (catch Exception _
@@ -267,10 +270,14 @@
                                                            (if (nil? %)
                                                              nil
                                                              -1))))
+       (optional ["--zone" "Specifies an availability zone."
+                  :default "us-east-1d"])
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
        (optional ["--start" "Boots a Pallet cluster."])
        (optional ["--emr" "Boots an EMR cluster."])
        (optional ["--stop" "Kills a pallet cluster."])))
+
+;; ##Validators
 
 (defn size-valid?
   "This step checks that, if `start` or `emr` exist in the arg map,
@@ -292,21 +299,35 @@
     (add-error m "Please specify a valid bid price.")
     m))
 
+(defn type-valid?
+  "This step checks that, if `start` or `emr` exist in the
+  arg map, they're accompanied by a valid type. If this passes,
+  the function acts as identity, else an error is added to the map."
+  [{:keys [start emr type] :as m}]
+  (if (and (or start emr)
+           (or (nil? type)
+               (not (or (= type "large")
+                        (= type "high-memory")
+                        (= type "cluster-compute")))))
+    (add-error m "Please specify a valid type (large, high-memory, cluster-compute).")
+    m))
+
 ;;Checks to make sure command line arguments make sense. If there are
 ;;errors then they are added to the map
 (def hadoop-validator
   (build-validator
    (just-one? :start :stop :emr :jobtracker-ip)
    (size-valid?)
+   (type-valid?)
    (bidprice-valid?)))
 
 (def -main
   (cli-interface parse-hadoop-args
                  hadoop-validator
-                 (fn [{:keys [name type size bid] :as m}]
+                 (fn [{:keys [name type size bid zone] :as m}]
                    (condp (flip get) m
                      :start (create-cluster! type size bid)
-                     :emr   (boot-emr! type size name bid)
+                     :emr   (boot-emr! type size name bid zone)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!")))))
