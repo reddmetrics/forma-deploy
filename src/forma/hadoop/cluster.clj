@@ -221,6 +221,7 @@
      (elastic-mapreduce --create --alive
                         --name ~(str "forma-" name)
                         --availability-zone ~zone
+                        --ami-version "2.0.5"
                         
                         --instance-group master
                         --instance-type ~type
