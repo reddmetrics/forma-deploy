@@ -213,13 +213,15 @@
          (format "\"--core-config-file,%s,%s\"" redd-config-path))))
 
 (defn boot-emr!
-  [node-type node-count name bid]
+  [node-type node-count name bid zone]
   (let [{:keys [base-props base-machine-spec nodedefs]}
         (forma-cluster node-type node-count bid)
         {type :hardware-id} base-machine-spec]
     (execute/local-script
      (elastic-mapreduce --create --alive
                         --name ~(str "forma-" name)
+                        --availability-zone ~zone
+                        
                         --instance-group master
                         --instance-type ~type
                         --instance-count 1 
@@ -267,10 +269,14 @@
                                                            (if (nil? %)
                                                              nil
                                                              -1))))
+       (optional ["--zone" "Specifies an availability zone."
+                  :default "us-east-1d"])
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
        (optional ["--start" "Boots a Pallet cluster."])
        (optional ["--emr" "Boots an EMR cluster."])
        (optional ["--stop" "Kills a pallet cluster."])))
+
+;; ##Validators
 
 (defn size-valid?
   "This step checks that, if `start` or `emr` exist in the arg map,
@@ -317,10 +323,10 @@
 (def -main
   (cli-interface parse-hadoop-args
                  hadoop-validator
-                 (fn [{:keys [name type size bid] :as m}]
+                 (fn [{:keys [name type size bid zone] :as m}]
                    (condp (flip get) m
                      :start (create-cluster! type size bid)
-                     :emr   (boot-emr! type size name bid)
+                     :emr   (boot-emr! type size name bid zone)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!")))))
