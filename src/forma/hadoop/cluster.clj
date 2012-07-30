@@ -36,6 +36,11 @@
 (def fw-path "/usr/local/fwtools")
 (def native-path "/home/hadoop/native")
 
+(def default-bid-price
+  {"large" 0.32
+   "cluster-compute" 1.30
+   "high-memory" 1.80})
+
 (def tokens
   (join "," ["130=forma.schema.IntArray"
              "131=forma.schema.DoubleArray"
@@ -93,7 +98,7 @@
   "Generates a FORMA cluster with the supplied number of nodes. We
   pick that reduce capacity based on the recommended 1.2 times the
   number of tasks times number of nodes."
-  [cluster-key nodecount & [bid-price]] 
+  [cluster-key nodecount & [bid-price on-demand]] 
   {:pre [(not (nil? cluster-key))]}
   (let [lib-path (str fw-path "/usr/lib")
         {:keys [map-tasks reduce-tasks image-id hardware-id]}
@@ -102,7 +107,10 @@
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
       :slaves     (if (nil? bid-price)
-                    (slave-group nodecount) ;;on-demand
+                    (if (nil? on-demand)
+                      (slave-group nodecount :spec {:spot-price
+                                                    (default-bid-price cluster-key)})
+                      (slave-group nodecount));;on-demand
                     (slave-group nodecount :spec {:spot-price bid-price}))}
      :base-machine-spec {:hardware-id hardware-id
                          :image-id image-id}
@@ -166,9 +174,9 @@
   (println "Hit Ctrl-C to exit."))
 
 (defn create-cluster!
-  [node-type node-count bid-price]
+  [node-type node-count bid-price on-demand]
   (env/with-ec2-service [service]
-    (let [cluster (forma-cluster node-type node-count bid-price)]
+    (let [cluster (forma-cluster node-type node-count bid-price on-demand)]
       (println
        (format "Creating cluster of %s instances and %d nodes."
                node-type node-count))
@@ -213,7 +221,7 @@
          (format "\"--core-config-file,%s,%s\"" redd-config-path))))
 
 (defn boot-emr!
-  [node-type node-count name bid zone]
+  [node-type node-count name bid zone on-demand]
   (let [{:keys [base-props base-machine-spec nodedefs]}
         (forma-cluster node-type node-count bid)
         {type :hardware-id} base-machine-spec]
@@ -230,8 +238,13 @@
                         --instance-group core
                         --instance-type ~type
                         --instance-count ~node-count
-                        ~(when (not (nil? bid))
-                           (str " --bid-price " bid))
+                        ~(if (nil? bid)
+                           (if (nil? on-demand)
+                             ;;no bid specified, no --on-demand tag
+                             (str "--bid-price "
+                                  (default-bid-price node-type)) 
+                             "") ;;use on-demand
+                           (str " --bid-price " bid)) ;;bid-price specified
                         --enable-debugging
 
                         --bootstrap-action
@@ -272,6 +285,7 @@
                                                              -1))))
        (optional ["--zone" "Specifies an availability zone."
                   :default "us-east-1d"])
+       (optional ["--on-demand" "Uses on demand-pricing for all nodes"])
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
        (optional ["--start" "Boots a Pallet cluster."])
        (optional ["--emr" "Boots an EMR cluster."])
@@ -322,12 +336,12 @@
    (bidprice-valid?)))
 
 (def -main
-  (cli-interface parse-hadoop-args
-                 hadoop-validator
-                 (fn [{:keys [name type size bid zone] :as m}]
+  (cli-interface parse-hadoop-args ;;takes in the cli args
+                 hadoop-validator  ;;takes in the parsed cli args
+                 (fn [{:keys [name type size bid zone on-demand] :as m}]
                    (condp (flip get) m
-                     :start (create-cluster! type size bid)
-                     :emr   (boot-emr! type size name bid zone)
+                     :start (create-cluster! type size bid on-demand)
+                     :emr   (boot-emr! type size name bid zone on-demand)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!")))))
