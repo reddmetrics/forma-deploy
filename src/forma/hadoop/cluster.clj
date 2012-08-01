@@ -88,21 +88,21 @@
    :price bid-price})
 
 (defn cluster-profiles
-  [type bid-price]
-  ({"large"           (mk-profile 4 2 bid-price "us-east-1/ami-08f40561" "m1.large")
-   "high-memory"     (mk-profile 30 24 bid-price "us-east-1/ami-08f40561" "m2.4xlarge")
-   "cluster-compute" (mk-profile 22 16 bid-price "us-east-1/ami-1cad5275" "cc1.4xlarge")}
+  [type bid-price mappers reducers]
+  ({"large"           (mk-profile (or mappers 4) (or reducers 2) bid-price "us-east-1/ami-08f40561" "m1.large")
+    "high-memory"     (mk-profile (or mappers 30) (or reducers 24) bid-price "us-east-1/ami-08f40561" "m2.4xlarge")
+    "cluster-compute" (mk-profile (or mappers 22) (or reducers 16) bid-price "us-east-1/ami-1cad5275" "cc1.4xlarge")}
    type))
 
 (defn forma-cluster
   "Generates a FORMA cluster with the supplied number of nodes. We
   pick that reduce capacity based on the recommended 1.2 times the
   number of tasks times number of nodes."
-  [cluster-key nodecount & [bid-price on-demand]] 
+  [cluster-key nodecount & [bid-price on-demand mappers reducers]] 
   {:pre [(not (nil? cluster-key))]}
   (let [lib-path (str fw-path "/usr/lib")
         {:keys [map-tasks reduce-tasks image-id hardware-id]}
-        (cluster-profiles (or cluster-key "high-memory") bid-price)]
+        (cluster-profiles (or cluster-key "high-memory") bid-price mappers reducers)]
     (cluster-spec
      :private
      {:jobtracker (node-group [:jobtracker :namenode])
@@ -174,9 +174,9 @@
   (println "Hit Ctrl-C to exit."))
 
 (defn create-cluster!
-  [node-type node-count bid-price on-demand]
+  [node-type node-count bid-price on-demand mappers reducers]
   (env/with-ec2-service [service]
-    (let [cluster (forma-cluster node-type node-count bid-price on-demand)]
+    (let [cluster (forma-cluster node-type node-count bid-price on-demand mappers reducers)]
       (println
        (format "Creating cluster of %s instances and %d nodes."
                node-type node-count))
@@ -221,9 +221,9 @@
          (format "\"--core-config-file,%s,%s\"" redd-config-path))))
 
 (defn boot-emr!
-  [node-type node-count name bid zone on-demand]
+  [node-type node-count name bid zone on-demand mappers reducers]
   (let [{:keys [base-props base-machine-spec nodedefs]}
-        (forma-cluster node-type node-count bid)
+        (forma-cluster node-type node-count bid on-demand mappers reducers)
         {type :hardware-id} base-machine-spec]
     (execute/local-script
      (elastic-mapreduce --create --alive
@@ -277,14 +277,22 @@
                                                        (Long. %)
                                                        (catch Exception _
                                                          nil)))
-       (optional ["--bid" "Specifies a bid price."]  #(try
-                                                         (Float. %)
-                                                         (catch Exception _
-                                                           (if (nil? %)
-                                                             nil
-                                                             -1))))
+       (optional ["--bid" "Specifies a bid price."] #(try
+                                                       (Float. %)
+                                                       (catch Exception _
+                                                         (if (nil? %)
+                                                           nil
+                                                           -1))))
        (optional ["--zone" "Specifies an availability zone."
                   :default "us-east-1d"])
+       (optional ["--mappers"] #(try
+                                  (Long. %)
+                                  (catch Exception _
+                                    nil)))
+       (optional ["--reducers"] #(try
+                                   (Long. %)
+                                   (catch Exception _
+                                     nil)))
        (optional ["--on-demand" "Uses on demand-pricing for all nodes"])
        (optional ["--jobtracker-ip" "Print jobtracker IP address?"])
        (optional ["--start" "Boots a Pallet cluster."])
@@ -338,10 +346,10 @@
 (def -main
   (cli-interface parse-hadoop-args ;;takes in the cli args
                  hadoop-validator  ;;takes in the parsed cli args
-                 (fn [{:keys [name type size bid zone on-demand] :as m}]
+                 (fn [{:keys [name type size bid zone on-demand mappers reducers] :as m}]
                    (condp (flip get) m
-                     :start (create-cluster! type size bid on-demand)
-                     :emr   (boot-emr! type size name bid zone on-demand)
+                     :start (create-cluster! type size bid on-demand mappers reducers)
+                     :emr   (boot-emr! type size name bid zone on-demand mappers reducers)
                      :stop  (destroy-cluster! type)
                      :jobtracker-ip (print-jobtracker-ip type)
                      (println "Please provide an option!")))))
